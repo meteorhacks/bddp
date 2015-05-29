@@ -6,6 +6,123 @@ import (
 	C "github.com/glycerine/go-capnproto"
 )
 
+type Message C.Struct
+type Message_Which uint16
+
+const (
+	MESSAGE_CONNECT     Message_Which = 0
+	MESSAGE_CONNECTED   Message_Which = 1
+	MESSAGE_FAILED      Message_Which = 2
+	MESSAGE_PING        Message_Which = 3
+	MESSAGE_PONG        Message_Which = 4
+	MESSAGE_SUB         Message_Which = 5
+	MESSAGE_UNSUB       Message_Which = 6
+	MESSAGE_NOSUB       Message_Which = 7
+	MESSAGE_ADDED       Message_Which = 8
+	MESSAGE_CHANGED     Message_Which = 9
+	MESSAGE_REMOVED     Message_Which = 10
+	MESSAGE_READY       Message_Which = 11
+	MESSAGE_ADDEDBEFORE Message_Which = 12
+	MESSAGE_MOVEDBEFORE Message_Which = 13
+	MESSAGE_METHOD      Message_Which = 14
+	MESSAGE_RESULT      Message_Which = 15
+	MESSAGE_UPDATED     Message_Which = 16
+)
+
+func NewMessage(s *C.Segment) Message      { return Message(s.NewStruct(8, 1)) }
+func NewRootMessage(s *C.Segment) Message  { return Message(s.NewRootStruct(8, 1)) }
+func AutoNewMessage(s *C.Segment) Message  { return Message(s.NewStructAR(8, 1)) }
+func ReadRootMessage(s *C.Segment) Message { return Message(s.Root(0).ToStruct()) }
+func (s Message) Which() Message_Which     { return Message_Which(C.Struct(s).Get16(0)) }
+func (s Message) Connect() ConnectMsg      { return ConnectMsg(C.Struct(s).GetObject(0).ToStruct()) }
+func (s Message) SetConnect(v ConnectMsg) {
+	C.Struct(s).Set16(0, 0)
+	C.Struct(s).SetObject(0, C.Object(v))
+}
+func (s Message) Connected() ConnectedMsg { return ConnectedMsg(C.Struct(s).GetObject(0).ToStruct()) }
+func (s Message) SetConnected(v ConnectedMsg) {
+	C.Struct(s).Set16(0, 1)
+	C.Struct(s).SetObject(0, C.Object(v))
+}
+func (s Message) Failed() FailedMsg { return FailedMsg(C.Struct(s).GetObject(0).ToStruct()) }
+func (s Message) SetFailed(v FailedMsg) {
+	C.Struct(s).Set16(0, 2)
+	C.Struct(s).SetObject(0, C.Object(v))
+}
+func (s Message) Ping() PingMsg       { return PingMsg(C.Struct(s).GetObject(0).ToStruct()) }
+func (s Message) SetPing(v PingMsg)   { C.Struct(s).Set16(0, 3); C.Struct(s).SetObject(0, C.Object(v)) }
+func (s Message) Pong() PongMsg       { return PongMsg(C.Struct(s).GetObject(0).ToStruct()) }
+func (s Message) SetPong(v PongMsg)   { C.Struct(s).Set16(0, 4); C.Struct(s).SetObject(0, C.Object(v)) }
+func (s Message) Sub() SubMsg         { return SubMsg(C.Struct(s).GetObject(0).ToStruct()) }
+func (s Message) SetSub(v SubMsg)     { C.Struct(s).Set16(0, 5); C.Struct(s).SetObject(0, C.Object(v)) }
+func (s Message) Unsub() UnsubMsg     { return UnsubMsg(C.Struct(s).GetObject(0).ToStruct()) }
+func (s Message) SetUnsub(v UnsubMsg) { C.Struct(s).Set16(0, 6); C.Struct(s).SetObject(0, C.Object(v)) }
+func (s Message) Nosub() NosubMsg     { return NosubMsg(C.Struct(s).GetObject(0).ToStruct()) }
+func (s Message) SetNosub(v NosubMsg) { C.Struct(s).Set16(0, 7); C.Struct(s).SetObject(0, C.Object(v)) }
+func (s Message) Added() AddedMsg     { return AddedMsg(C.Struct(s).GetObject(0).ToStruct()) }
+func (s Message) SetAdded(v AddedMsg) { C.Struct(s).Set16(0, 8); C.Struct(s).SetObject(0, C.Object(v)) }
+func (s Message) Changed() ChangedMsg { return ChangedMsg(C.Struct(s).GetObject(0).ToStruct()) }
+func (s Message) SetChanged(v ChangedMsg) {
+	C.Struct(s).Set16(0, 9)
+	C.Struct(s).SetObject(0, C.Object(v))
+}
+func (s Message) Removed() RemovedMsg { return RemovedMsg(C.Struct(s).GetObject(0).ToStruct()) }
+func (s Message) SetRemoved(v RemovedMsg) {
+	C.Struct(s).Set16(0, 10)
+	C.Struct(s).SetObject(0, C.Object(v))
+}
+func (s Message) Ready() ReadyMsg     { return ReadyMsg(C.Struct(s).GetObject(0).ToStruct()) }
+func (s Message) SetReady(v ReadyMsg) { C.Struct(s).Set16(0, 11); C.Struct(s).SetObject(0, C.Object(v)) }
+func (s Message) Addedbefore() AddedBeforeMsg {
+	return AddedBeforeMsg(C.Struct(s).GetObject(0).ToStruct())
+}
+func (s Message) SetAddedbefore(v AddedBeforeMsg) {
+	C.Struct(s).Set16(0, 12)
+	C.Struct(s).SetObject(0, C.Object(v))
+}
+func (s Message) Movedbefore() MovedBeforeMsg {
+	return MovedBeforeMsg(C.Struct(s).GetObject(0).ToStruct())
+}
+func (s Message) SetMovedbefore(v MovedBeforeMsg) {
+	C.Struct(s).Set16(0, 13)
+	C.Struct(s).SetObject(0, C.Object(v))
+}
+func (s Message) Method() MethodMsg { return MethodMsg(C.Struct(s).GetObject(0).ToStruct()) }
+func (s Message) SetMethod(v MethodMsg) {
+	C.Struct(s).Set16(0, 14)
+	C.Struct(s).SetObject(0, C.Object(v))
+}
+func (s Message) Result() ResultMsg { return ResultMsg(C.Struct(s).GetObject(0).ToStruct()) }
+func (s Message) SetResult(v ResultMsg) {
+	C.Struct(s).Set16(0, 15)
+	C.Struct(s).SetObject(0, C.Object(v))
+}
+func (s Message) Updated() UpdatedMsg { return UpdatedMsg(C.Struct(s).GetObject(0).ToStruct()) }
+func (s Message) SetUpdated(v UpdatedMsg) {
+	C.Struct(s).Set16(0, 16)
+	C.Struct(s).SetObject(0, C.Object(v))
+}
+
+// capn.JSON_enabled == false so we stub MarshallJSON().
+func (s Message) MarshalJSON() (bs []byte, err error) { return }
+
+type Message_List C.PointerList
+
+func NewMessageList(s *C.Segment, sz int) Message_List {
+	return Message_List(s.NewCompositeList(8, 1, sz))
+}
+func (s Message_List) Len() int         { return C.PointerList(s).Len() }
+func (s Message_List) At(i int) Message { return Message(C.PointerList(s).At(i).ToStruct()) }
+func (s Message_List) ToArray() []Message {
+	n := s.Len()
+	a := make([]Message, n)
+	for i := 0; i < n; i++ {
+		a[i] = s.At(i)
+	}
+	return a
+}
+func (s Message_List) Set(i int, item Message) { C.PointerList(s).Set(i, C.Object(item)) }
+
 type ConnectMsg C.Struct
 
 func NewConnectMsg(s *C.Segment) ConnectMsg      { return ConnectMsg(s.NewStruct(0, 3)) }

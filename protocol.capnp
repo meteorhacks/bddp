@@ -6,59 +6,71 @@ $Go.import("github.com/glycerine/go-capnproto/capnpc-go");
 
 using Id = UInt64;
 
-// type 0
+struct Message {
+  union {
+    connect @0 :ConnectMsg;
+    connected @1 :ConnectedMsg;
+    failed @2 :FailedMsg;
+    ping @3 :PingMsg;
+    pong @4 :PongMsg;
+    sub @5 :SubMsg;
+    unsub @6 :UnsubMsg;
+    nosub @7 :NosubMsg;
+    added @8 :AddedMsg;
+    changed @9 :ChangedMsg;
+    removed @10 :RemovedMsg;
+    ready @11 :ReadyMsg;
+    addedbefore @12 :AddedBeforeMsg;
+    movedbefore @13 :MovedBeforeMsg;
+    method @14 :MethodMsg;
+    result @15 :ResultMsg;
+    updated @16 :UpdatedMsg;
+  }
+}
+
 struct ConnectMsg {
   session @0 :Text;
   version @1 :Text;
   support @2 :List(Text);
 }
 
-// type 1
 struct ConnectedMsg {
   session @0 :Text;
 }
 
-// type 2
 struct FailedMsg {
   version @0 :Text;
 }
 
-// type 3
 struct PingMsg {
   id @0 :Text;
 }
 
-// type 4
 struct PongMsg {
   id @0 :Text;
 }
 
-// type 5
 struct SubMsg {
   id @0 :Text;
   name @1 :Text;
   params @2 :Data;
 }
 
-// type 6
 struct UnsubMsg {
   id @0 :Text;
 }
 
-// type 7
 struct NosubMsg {
   id @0 :Text;
   error @1 :Error;
 }
 
-// type 8
 struct AddedMsg {
   id @0 :Text;
   collection @1 :Text;
   fields @2 :Data;
 }
 
-// type 9
 struct ChangedMsg {
   id @0 :Text;
   collection @1 :Text;
@@ -66,18 +78,15 @@ struct ChangedMsg {
   cleared @3 :List(Text);
 }
 
-// type 10
 struct RemovedMsg {
   id @0 :Text;
   collection @1 :Text;
 }
 
-// type 11
 struct ReadyMsg {
   subs @0 :List(Text);
 }
 
-// type 12
 struct AddedBeforeMsg {
   id @0 :Text;
   collection @1 :Text;
@@ -85,14 +94,12 @@ struct AddedBeforeMsg {
   before @3 :Text;
 }
 
-// type 13
 struct MovedBeforeMsg {
   id @0 :Text;
   collection @1 :Text;
   before @2 :Text;
 }
 
-// type 14
 struct MethodMsg {
   method @0 :Text;
   params @1 :Data;
@@ -100,14 +107,12 @@ struct MethodMsg {
   randomSeed @3 :Data;
 }
 
-// type 15
 struct ResultMsg {
   id @0 :Text;
   error @1 :Error;
   result @2 :Data;
 }
 
-// type 16
 struct UpdatedMsg {
   methods @0 :List(Text);
 }
