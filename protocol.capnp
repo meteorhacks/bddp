@@ -53,7 +53,7 @@ struct PongMsg {
 struct SubMsg {
   id @0 :Text;
   name @1 :Text;
-  params @2 :Data;
+  params @2 :List(Data);
 }
 
 struct UnsubMsg {
@@ -102,7 +102,7 @@ struct MovedBeforeMsg {
 
 struct MethodMsg {
   method @0 :Text;
-  params @1 :Data;
+  params @1 :List(Data);
   id @2 :Text;
   randomSeed @3 :Data;
 }
