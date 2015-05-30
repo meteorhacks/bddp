@@ -53,7 +53,7 @@ struct PongMsg {
 struct SubMsg {
   id @0 :Text;
   name @1 :Text;
-  params @2 :List(Data);
+  params @2 :List(Param);
 }
 
 struct UnsubMsg {
@@ -68,13 +68,13 @@ struct NosubMsg {
 struct AddedMsg {
   id @0 :Text;
   collection @1 :Text;
-  fields @2 :Data;
+  fields @2 :AnyPointer;
 }
 
 struct ChangedMsg {
   id @0 :Text;
   collection @1 :Text;
-  fields @2 :Data;
+  fields @2 :AnyPointer;
   cleared @3 :List(Text);
 }
 
@@ -90,7 +90,7 @@ struct ReadyMsg {
 struct AddedBeforeMsg {
   id @0 :Text;
   collection @1 :Text;
-  fields @2 :Data;
+  fields @2 :AnyPointer;
   before @3 :Text;
 }
 
@@ -102,19 +102,23 @@ struct MovedBeforeMsg {
 
 struct MethodMsg {
   method @0 :Text;
-  params @1 :List(Data);
+  params @1 :List(Param);
   id @2 :Text;
-  randomSeed @3 :Data;
+  randomSeed @3 :AnyPointer;
 }
 
 struct ResultMsg {
   id @0 :Text;
   error @1 :Error;
-  result @2 :Data;
+  result @2 :AnyPointer;
 }
 
 struct UpdatedMsg {
   methods @0 :List(Text);
+}
+
+struct Param {
+  value @0 :AnyPointer;
 }
 
 struct Error {
