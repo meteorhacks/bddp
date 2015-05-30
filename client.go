@@ -12,12 +12,17 @@ import (
 )
 
 const (
-	PingSeconds = 10
+	PingInterval     = 10
+	ClientVersion    = "1"
+	ClientBufferSize = 32
 )
 
 var (
-	ErrClientClosed  = errors.New("client is closed")
-	ErrInvalidPongId = errors.New("ping-pong ids doesn't match")
+	ErrClientClosed   = errors.New("client is closed")
+	ErrClientNotReady = errors.New("client not connected")
+	ErrInvalidPongId  = errors.New("ping-pong ids doesn't match")
+	ErrInvalidMsgType = errors.New("invalid message type")
+	ErrConnectFailed  = errors.New("failed to create session")
 )
 
 type Client interface {
@@ -27,12 +32,18 @@ type Client interface {
 type client struct {
 	conn       net.Conn
 	closed     bool
+	incoming   chan Message
+	outgoing   chan Message
 	pingId     string
+	sessionId  string
 	latestPong time.Time
 }
 
 func NewClient() (c Client) {
-	return &client{}
+	return &client{
+		incoming: make(chan Message, ClientBufferSize),
+		outgoing: make(chan Message, ClientBufferSize),
+	}
 }
 
 func (c *client) Connect(addr string) (err error) {
@@ -41,44 +52,104 @@ func (c *client) Connect(addr string) (err error) {
 		return err
 	}
 
+	go c.sendMessages()
+	go c.recvMessages()
 	go c.handleConn()
+	go c.startSession()
 	go c.startPing()
 
 	return nil
 }
 
 func (c *client) Close() (err error) {
-	err = c.conn.Close()
-	if err != nil {
-		return err
-	}
-
+	close(c.incoming)
+	close(c.outgoing)
 	c.closed = true
-	return nil
+
+	err = c.conn.Close()
+	return err
+}
+
+func (c *client) sendMessages() {
+	for {
+		root, open := <-c.outgoing
+		if !open {
+			break
+		}
+
+		seg := root.Segment
+
+		if _, err := seg.WriteTo(c.conn); err != nil {
+			log.Println(err)
+		}
+	}
+}
+
+func (c *client) recvMessages() {
+	for {
+		root, open := <-c.incoming
+		if !open {
+			break
+		}
+
+		msgType := root.Which()
+
+		if c.sessionId == "" {
+			switch msgType {
+			case MESSAGE_CONNECTED:
+				req := root.Connected()
+				c.handleConnected(req)
+			case MESSAGE_FAILED:
+				req := root.Failed()
+				c.handleFailed(req)
+			default:
+				log.Println(ErrClientNotReady, msgType)
+			}
+
+			continue
+		}
+
+		switch msgType {
+		case MESSAGE_PONG:
+			req := root.Pong()
+			c.handlePong(req)
+		default:
+			log.Println(ErrInvalidMsgType, msgType)
+		}
+	}
+}
+
+func (c *client) startSession() {
+	seg := capn.NewBuffer(nil)
+	root := NewRootMessage(seg)
+	msg := NewConnectMsg(seg)
+	msg.SetVersion(ClientVersion)
+	support := seg.NewTextList(1)
+	support.Set(0, ClientVersion)
+	msg.SetSupport(support)
+	root.SetConnect(msg)
+
+	c.outgoing <- root
 }
 
 func (c *client) startPing() {
 	counter := 0
 
-	for _ = range time.Tick(time.Second * PingSeconds) {
-		id := strconv.Itoa(counter)
-		counter++
+	seg := capn.NewBuffer(nil)
+	root := NewRootMessage(seg)
+	msg := NewPingMsg(seg)
+	root.SetPing(msg)
 
+	for _ = range time.Tick(time.Second * PingInterval) {
 		if c.closed {
 			break
 		}
 
-		seg := capn.NewBuffer(nil)
-		root := NewRootMessage(seg)
-		msg := NewPingMsg(seg)
+		id := strconv.Itoa(counter)
+		counter++
+
 		msg.SetId(id)
-		root.SetPing(msg)
-
-		if _, err := seg.WriteTo(c.conn); err != nil {
-			log.Println(err)
-			continue
-		}
-
+		c.outgoing <- root
 		c.pingId = id
 	}
 }
@@ -91,29 +162,30 @@ func (c *client) handleConn() {
 
 		seg, err := capn.ReadFromStream(c.conn, nil)
 		if err == io.EOF {
+			c.Close()
 			break
 		} else if err != nil {
 			log.Println(err)
 			break
 		}
 
-		root := ReadRootMessage(seg)
-
-		switch t := root.Which(); t {
-		case MESSAGE_PONG:
-			req := root.Pong()
-			c.handlePong(&req)
-		default:
-			log.Println(ErrUnknownMsgType, t)
-		}
+		c.incoming <- ReadRootMessage(seg)
 	}
 }
 
-func (c *client) handlePong(req *PongMsg) {
+func (c *client) handlePong(req PongMsg) {
 	if c.pingId != req.Id() {
 		log.Println(ErrInvalidPongId)
 		return
 	}
 
 	c.latestPong = time.Now()
+}
+
+func (c *client) handleConnected(req ConnectedMsg) {
+	c.sessionId = req.Session()
+}
+
+func (c *client) handleFailed(req FailedMsg) {
+	log.Println(ErrConnectFailed)
 }

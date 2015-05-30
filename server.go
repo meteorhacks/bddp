@@ -1,17 +1,18 @@
 package bddp
 
 import (
-	"errors"
 	"io"
 	"log"
 	"net"
 	"time"
 
 	"github.com/glycerine/go-capnproto"
+	"github.com/satori/go.uuid"
 )
 
-var (
-	ErrUnknownMsgType = errors.New("unknown message type")
+const (
+	ServerVersion    = "1"
+	ServerBufferSize = 32
 )
 
 type Server interface {
@@ -26,6 +27,10 @@ type server struct {
 
 type session struct {
 	conn       net.Conn
+	closed     bool
+	incoming   chan Message
+	outgoing   chan Message
+	sessionId  string
 	latestPing time.Time
 }
 
@@ -50,7 +55,15 @@ func (s *server) Listen(addr string) (err error) {
 			continue
 		}
 
-		go s.handleConn(conn)
+		ses := &session{
+			conn:     conn,
+			incoming: make(chan Message, ServerBufferSize),
+			outgoing: make(chan Message, ServerBufferSize),
+		}
+
+		go s.sendMessages(ses)
+		go s.recvMessages(ses)
+		go s.handleConn(ses)
 	}
 
 	return nil
@@ -66,45 +79,107 @@ func (s *server) Close() (err error) {
 	return nil
 }
 
-func (s *server) handleConn(conn net.Conn) {
-	ses := &session{conn: conn}
+func (s *server) closeSession(ses *session) (err error) {
+	ses.closed = true
+	close(ses.incoming)
+	close(ses.outgoing)
 
+	err = ses.conn.Close()
+	return err
+}
+
+func (s *server) sendMessages(ses *session) {
 	for {
-		if s.closed {
+		root, open := <-ses.outgoing
+		if !open {
 			break
 		}
 
-		seg, err := capn.ReadFromStream(conn, nil)
+		seg := root.Segment
+
+		if _, err := seg.WriteTo(ses.conn); err != nil {
+			log.Println(err)
+		}
+	}
+}
+
+func (s *server) recvMessages(ses *session) {
+	for {
+		root, open := <-ses.incoming
+		if !open {
+			break
+		}
+
+		msgType := root.Which()
+
+		if ses.sessionId == "" {
+			switch msgType {
+			case MESSAGE_CONNECT:
+				req := root.Connect()
+				s.handleConnect(ses, req)
+			default:
+				log.Println(ErrClientNotReady, msgType)
+			}
+
+			continue
+		}
+
+		switch msgType {
+		case MESSAGE_PING:
+			req := root.Ping()
+			s.handlePing(ses, req)
+		default:
+			log.Println(ErrInvalidMsgType, msgType)
+		}
+	}
+}
+
+func (s *server) handleConn(ses *session) {
+	for {
+		if ses.closed || s.closed {
+			break
+		}
+
+		seg, err := capn.ReadFromStream(ses.conn, nil)
 		if err == io.EOF {
+			s.closeSession(ses)
 			break
 		} else if err != nil {
 			log.Println(err)
 			break
 		}
 
-		root := ReadRootMessage(seg)
-
-		switch t := root.Which(); t {
-		case MESSAGE_PING:
-			req := root.Ping()
-			s.handlePing(ses, &req)
-		default:
-			log.Println(ErrUnknownMsgType, t)
-		}
+		ses.incoming <- ReadRootMessage(seg)
 	}
 }
 
-func (s *server) handlePing(ses *session, req *PingMsg) {
+// TODO: implement resuming existing session
+// TODO: implement support for multiple versions
+func (s *server) handleConnect(ses *session, req ConnectMsg) {
+	seg := capn.NewBuffer(nil)
+	root := NewRootMessage(seg)
+
+	if req.Version() == ServerVersion {
+		msg := NewConnectedMsg(seg)
+		ses.sessionId = uuid.NewV4().String()
+		msg.SetSession(ses.sessionId)
+		root.SetConnected(msg)
+	} else {
+		msg := NewFailedMsg(seg)
+		msg.SetVersion(ServerVersion)
+		root.SetFailed(msg)
+	}
+
+	ses.outgoing <- root
+}
+
+func (s *server) handlePing(ses *session, req PingMsg) {
 	seg := capn.NewBuffer(nil)
 	root := NewRootMessage(seg)
 	msg := NewPongMsg(seg)
 	msg.SetId(req.Id())
 	root.SetPong(msg)
 
-	if _, err := seg.WriteTo(ses.conn); err != nil {
-		log.Println(err)
-		return
-	}
-
+	ses.outgoing <- root
 	ses.latestPing = time.Now()
 }
