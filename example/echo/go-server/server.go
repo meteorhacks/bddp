@@ -12,7 +12,6 @@ func main() {
 func Prepare() (s bddp.Server) {
 	// create a server and listen
 	s = bddp.NewServer()
-	go s.Listen(":3300")
 
 	s.Method("echo", func(ctx bddp.MethodContext) {
 		params := ctx.Params()
@@ -21,6 +20,8 @@ func Prepare() (s bddp.Server) {
 		ctx.SendResult(&obj)
 		ctx.SendUpdated()
 	})
+
+	go s.Listen(":3600")
 
 	return s
 }

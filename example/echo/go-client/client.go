@@ -22,7 +22,7 @@ func main() {
 func Prepare() (c bddp.Client) {
 	// create a client and connect
 	c = bddp.NewClient()
-	if err := c.Connect("localhost:3300"); err != nil {
+	if err := c.Connect("localhost:3600"); err != nil {
 		panic(err)
 	}
 
