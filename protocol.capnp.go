@@ -601,17 +601,24 @@ func (s MethodMsg_List) ToArray() []MethodMsg {
 func (s MethodMsg_List) Set(i int, item MethodMsg) { C.PointerList(s).Set(i, C.Object(item)) }
 
 type ResultMsg C.Struct
+type ResultMsg_Which uint16
 
-func NewResultMsg(s *C.Segment) ResultMsg      { return ResultMsg(s.NewStruct(0, 3)) }
-func NewRootResultMsg(s *C.Segment) ResultMsg  { return ResultMsg(s.NewRootStruct(0, 3)) }
-func AutoNewResultMsg(s *C.Segment) ResultMsg  { return ResultMsg(s.NewStructAR(0, 3)) }
+const (
+	RESULTMSG_ERROR  ResultMsg_Which = 0
+	RESULTMSG_RESULT ResultMsg_Which = 1
+)
+
+func NewResultMsg(s *C.Segment) ResultMsg      { return ResultMsg(s.NewStruct(8, 2)) }
+func NewRootResultMsg(s *C.Segment) ResultMsg  { return ResultMsg(s.NewRootStruct(8, 2)) }
+func AutoNewResultMsg(s *C.Segment) ResultMsg  { return ResultMsg(s.NewStructAR(8, 2)) }
 func ReadRootResultMsg(s *C.Segment) ResultMsg { return ResultMsg(s.Root(0).ToStruct()) }
+func (s ResultMsg) Which() ResultMsg_Which     { return ResultMsg_Which(C.Struct(s).Get16(0)) }
 func (s ResultMsg) Id() string                 { return C.Struct(s).GetObject(0).ToText() }
 func (s ResultMsg) SetId(v string)             { C.Struct(s).SetObject(0, s.Segment.NewText(v)) }
 func (s ResultMsg) Error() Error               { return Error(C.Struct(s).GetObject(1).ToStruct()) }
-func (s ResultMsg) SetError(v Error)           { C.Struct(s).SetObject(1, C.Object(v)) }
-func (s ResultMsg) Result() C.Object           { return C.Struct(s).GetObject(2) }
-func (s ResultMsg) SetResult(v C.Object)       { C.Struct(s).SetObject(2, v) }
+func (s ResultMsg) SetError(v Error)           { C.Struct(s).Set16(0, 0); C.Struct(s).SetObject(1, C.Object(v)) }
+func (s ResultMsg) Result() C.Object           { return C.Struct(s).GetObject(1) }
+func (s ResultMsg) SetResult(v C.Object)       { C.Struct(s).Set16(0, 1); C.Struct(s).SetObject(1, v) }
 
 // capn.JSON_enabled == false so we stub MarshallJSON().
 func (s ResultMsg) MarshalJSON() (bs []byte, err error) { return }
@@ -619,7 +626,7 @@ func (s ResultMsg) MarshalJSON() (bs []byte, err error) { return }
 type ResultMsg_List C.PointerList
 
 func NewResultMsgList(s *C.Segment, sz int) ResultMsg_List {
-	return ResultMsg_List(s.NewCompositeList(0, 3, sz))
+	return ResultMsg_List(s.NewCompositeList(8, 2, sz))
 }
 func (s ResultMsg_List) Len() int           { return C.PointerList(s).Len() }
 func (s ResultMsg_List) At(i int) ResultMsg { return ResultMsg(C.PointerList(s).At(i).ToStruct()) }

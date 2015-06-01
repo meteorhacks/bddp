@@ -109,8 +109,11 @@ struct MethodMsg {
 
 struct ResultMsg {
   id @0 :Text;
-  error @1 :Error;
-  result @2 :AnyPointer;
+
+  union {
+    error @1 :Error;
+    result @2 :AnyPointer;
+  }
 }
 
 struct UpdatedMsg {

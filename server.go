@@ -1,6 +1,7 @@
 package bddp
 
 import (
+	"errors"
 	"io"
 	"log"
 	"net"
@@ -15,27 +16,54 @@ const (
 	ServerBufferSize = 32
 )
 
+var (
+	ErrMethodNotFound = errors.New("method not found")
+)
+
 type Server interface {
 	Listen(addr string) (err error)
+	Method(name string, handler MethodHandler)
 	Close() (err error)
 }
 
 type server struct {
 	listener net.Listener
+	methods  map[string]MethodHandler
 	closed   bool
 }
 
 type session struct {
 	conn       net.Conn
 	closed     bool
-	incoming   chan Message
-	outgoing   chan Message
+	incoming   chan *Message
+	outgoing   chan *Message
 	sessionId  string
 	latestPing time.Time
 }
 
+type MethodContext interface {
+	Segment() (seg *capn.Segment)
+	Params() (params *Param_List)
+	SendResult(obj *capn.Object) (err error)
+	SendError(obj *capn.Object) (err error)
+	SendUpdated() (err error)
+}
+
+type methodContext struct {
+	message *Message
+	result  *ResultMsg
+	server  *server
+	session *session
+	segment *capn.Segment
+	params  *Param_List
+}
+
+type MethodHandler func(ctx MethodContext)
+
 func NewServer() (s Server) {
-	return &server{}
+	return &server{
+		methods: make(map[string]MethodHandler),
+	}
 }
 
 func (s *server) Listen(addr string) (err error) {
@@ -57,8 +85,8 @@ func (s *server) Listen(addr string) (err error) {
 
 		ses := &session{
 			conn:     conn,
-			incoming: make(chan Message, ServerBufferSize),
-			outgoing: make(chan Message, ServerBufferSize),
+			incoming: make(chan *Message, ServerBufferSize),
+			outgoing: make(chan *Message, ServerBufferSize),
 		}
 
 		go s.sendMessages(ses)
@@ -67,6 +95,10 @@ func (s *server) Listen(addr string) (err error) {
 	}
 
 	return nil
+}
+
+func (s *server) Method(name string, handler MethodHandler) {
+	s.methods[name] = handler
 }
 
 func (s *server) Close() (err error) {
@@ -116,7 +148,7 @@ func (s *server) recvMessages(ses *session) {
 			switch msgType {
 			case MESSAGE_CONNECT:
 				req := root.Connect()
-				s.handleConnect(ses, req)
+				s.handleConnect(ses, &req)
 			default:
 				log.Println(ErrClientNotReady, msgType)
 			}
@@ -127,7 +159,10 @@ func (s *server) recvMessages(ses *session) {
 		switch msgType {
 		case MESSAGE_PING:
 			req := root.Ping()
-			s.handlePing(ses, req)
+			s.handlePing(ses, &req)
+		case MESSAGE_METHOD:
+			req := root.Method()
+			s.handleMethod(ses, &req)
 		default:
 			log.Println(ErrInvalidMsgType, msgType)
 		}
@@ -149,13 +184,14 @@ func (s *server) handleConn(ses *session) {
 			break
 		}
 
-		ses.incoming <- ReadRootMessage(seg)
+		root := ReadRootMessage(seg)
+		ses.incoming <- &root
 	}
 }
 
 // TODO: implement resuming existing session
 // TODO: implement support for multiple versions
-func (s *server) handleConnect(ses *session, req ConnectMsg) {
+func (s *server) handleConnect(ses *session, req *ConnectMsg) {
 	seg := capn.NewBuffer(nil)
 	root := NewRootMessage(seg)
 
@@ -170,16 +206,82 @@ func (s *server) handleConnect(ses *session, req ConnectMsg) {
 		root.SetFailed(msg)
 	}
 
-	ses.outgoing <- root
+	ses.outgoing <- &root
 }
 
-func (s *server) handlePing(ses *session, req PingMsg) {
+func (s *server) handlePing(ses *session, req *PingMsg) {
 	seg := capn.NewBuffer(nil)
 	root := NewRootMessage(seg)
 	msg := NewPongMsg(seg)
 	msg.SetId(req.Id())
 	root.SetPong(msg)
 
-	ses.outgoing <- root
+	ses.outgoing <- &root
 	ses.latestPing = time.Now()
+}
+
+func (s *server) handleMethod(ses *session, req *MethodMsg) {
+	seg := capn.NewBuffer(nil)
+	root := NewRootMessage(seg)
+	msg := NewResultMsg(seg)
+	root.SetResult(msg)
+	msg.SetId(req.Id())
+
+	name := req.Method()
+	handler, ok := s.methods[name]
+	if !ok {
+		log.Println(ErrMethodNotFound)
+		err := NewError(seg)
+		msg.SetError(err)
+		ses.outgoing <- &root
+		return
+	}
+
+	params := req.Params()
+	ctx := &methodContext{
+		message: &root,
+		result:  &msg,
+		server:  s,
+		session: ses,
+		segment: seg,
+		params:  &params,
+	}
+
+	handler(ctx)
+}
+
+func (c *methodContext) Segment() (segment *capn.Segment) {
+	return c.segment
+}
+
+func (c *methodContext) Params() (params *Param_List) {
+	return c.params
+}
+
+func (c *methodContext) SendResult(res *capn.Object) (err error) {
+	c.result.SetResult(*res)
+	c.session.outgoing <- c.message
+
+	// TODO: get and return error
+	return nil
+}
+
+func (c *methodContext) SendError(obj *capn.Object) (err error) {
+	methodError := NewError(c.segment)
+	c.result.SetError(methodError)
+	c.session.outgoing <- c.message
+
+	// TODO: get and return error
+	return nil
+}
+
+func (c *methodContext) SendUpdated() (err error) {
+	seg := capn.NewBuffer(nil)
+	root := NewRootMessage(seg)
+	msg := NewUpdatedMsg(seg)
+	root.SetUpdated(msg)
+	c.session.outgoing <- &root
+
+	// TODO: get and return error
+	return nil
 }

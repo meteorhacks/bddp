@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/glycerine/go-capnproto"
+	"github.com/satori/go.uuid"
 )
 
 const (
@@ -23,17 +24,21 @@ var (
 	ErrInvalidPongId  = errors.New("ping-pong ids doesn't match")
 	ErrInvalidMsgType = errors.New("invalid message type")
 	ErrConnectFailed  = errors.New("failed to create session")
+	ErrInvalidResult  = errors.New("invalid method result")
 )
 
 type Client interface {
 	Connect(addr string) (err error)
+	Call(name string, params []interface{}) (res capn.Object, err error)
 }
 
 type client struct {
 	conn       net.Conn
 	closed     bool
-	incoming   chan Message
-	outgoing   chan Message
+	incoming   chan *Message
+	outgoing   chan *Message
+	calls      map[string]chan *ResultMsg
+	connectCh  chan error
 	pingId     string
 	sessionId  string
 	latestPong time.Time
@@ -41,8 +46,10 @@ type client struct {
 
 func NewClient() (c Client) {
 	return &client{
-		incoming: make(chan Message, ClientBufferSize),
-		outgoing: make(chan Message, ClientBufferSize),
+		incoming:  make(chan *Message, ClientBufferSize),
+		outgoing:  make(chan *Message, ClientBufferSize),
+		calls:     make(map[string]chan *ResultMsg),
+		connectCh: make(chan error),
 	}
 }
 
@@ -58,7 +65,59 @@ func (c *client) Connect(addr string) (err error) {
 	go c.startSession()
 	go c.startPing()
 
-	return nil
+	// TODO: timeout
+	err = <-c.connectCh
+	return err
+}
+
+// TODO: also implement an approach where the segment is created
+//       by the user for better performance
+func (c *client) Call(name string, params []interface{}) (res capn.Object, err error) {
+	seg := capn.NewBuffer(nil)
+	root := NewRootMessage(seg)
+	msg := NewMethodMsg(seg)
+	root.SetMethod(msg)
+	pms := NewParamList(seg, len(params))
+
+	// TODO: add cases for other types of params
+	for i, param := range params {
+		var v capn.Object
+
+		switch param.(type) {
+		case string:
+			v = seg.NewText(param.(string))
+		case []byte:
+			v = seg.NewData(param.([]byte))
+		}
+
+		p := NewParam(seg)
+		p.SetValue(v)
+		pms.Set(i, p)
+	}
+
+	// create a random it for the method call
+	id := uuid.NewV4().String()
+
+	msg.SetId(id)
+	msg.SetMethod(name)
+	msg.SetParams(pms)
+	ch := make(chan *ResultMsg)
+	c.calls[id] = ch
+
+	c.outgoing <- &root
+
+	// wait until we get a response
+	response := <-ch
+	delete(c.calls, id)
+
+	switch response.Which() {
+	case RESULTMSG_RESULT:
+		res = response.Result()
+	case RESULTMSG_ERROR:
+		err = response.Error()
+	}
+
+	return res, err
 }
 
 func (c *client) Close() (err error) {
@@ -98,10 +157,10 @@ func (c *client) recvMessages() {
 			switch msgType {
 			case MESSAGE_CONNECTED:
 				req := root.Connected()
-				c.handleConnected(req)
+				c.handleConnected(&req)
 			case MESSAGE_FAILED:
 				req := root.Failed()
-				c.handleFailed(req)
+				c.handleFailed(&req)
 			default:
 				log.Println(ErrClientNotReady, msgType)
 			}
@@ -112,7 +171,13 @@ func (c *client) recvMessages() {
 		switch msgType {
 		case MESSAGE_PONG:
 			req := root.Pong()
-			c.handlePong(req)
+			c.handlePong(&req)
+		case MESSAGE_RESULT:
+			req := root.Result()
+			c.handleResult(&req)
+		case MESSAGE_UPDATED:
+			req := root.Updated()
+			c.handleUpdated(&req)
 		default:
 			log.Println(ErrInvalidMsgType, msgType)
 		}
@@ -129,7 +194,7 @@ func (c *client) startSession() {
 	msg.SetSupport(support)
 	root.SetConnect(msg)
 
-	c.outgoing <- root
+	c.outgoing <- &root
 }
 
 func (c *client) startPing() {
@@ -149,7 +214,7 @@ func (c *client) startPing() {
 		counter++
 
 		msg.SetId(id)
-		c.outgoing <- root
+		c.outgoing <- &root
 		c.pingId = id
 	}
 }
@@ -169,11 +234,12 @@ func (c *client) handleConn() {
 			break
 		}
 
-		c.incoming <- ReadRootMessage(seg)
+		root := ReadRootMessage(seg)
+		c.incoming <- &root
 	}
 }
 
-func (c *client) handlePong(req PongMsg) {
+func (c *client) handlePong(req *PongMsg) {
 	if c.pingId != req.Id() {
 		log.Println(ErrInvalidPongId)
 		return
@@ -182,10 +248,26 @@ func (c *client) handlePong(req PongMsg) {
 	c.latestPong = time.Now()
 }
 
-func (c *client) handleConnected(req ConnectedMsg) {
+func (c *client) handleConnected(req *ConnectedMsg) {
 	c.sessionId = req.Session()
+	c.connectCh <- nil
 }
 
-func (c *client) handleFailed(req FailedMsg) {
-	log.Println(ErrConnectFailed)
+func (c *client) handleFailed(req *FailedMsg) {
+	c.connectCh <- ErrConnectFailed
+}
+
+func (c *client) handleResult(req *ResultMsg) {
+	id := req.Id()
+	ch, ok := c.calls[id]
+	if !ok {
+		log.Println(ErrInvalidResult)
+		return
+	}
+
+	ch <- req
+}
+
+func (c *client) handleUpdated(req *UpdatedMsg) {
+	// TODO
 }
