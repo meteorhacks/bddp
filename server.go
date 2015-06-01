@@ -113,9 +113,6 @@ func (s *server) Close() (err error) {
 
 func (s *server) closeSession(ses *session) (err error) {
 	ses.closed = true
-	close(ses.incoming)
-	close(ses.outgoing)
-
 	err = ses.conn.Close()
 	return err
 }

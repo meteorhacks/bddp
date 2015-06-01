@@ -84,8 +84,6 @@ func (c *client) Connect(addr string) (err error) {
 }
 
 func (c *client) Close() (err error) {
-	close(c.incoming)
-	close(c.outgoing)
 	c.closed = true
 
 	err = c.conn.Close()
