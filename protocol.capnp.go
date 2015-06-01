@@ -284,8 +284,8 @@ func (s SubMsg) Id() string              { return C.Struct(s).GetObject(0).ToTex
 func (s SubMsg) SetId(v string)          { C.Struct(s).SetObject(0, s.Segment.NewText(v)) }
 func (s SubMsg) Name() string            { return C.Struct(s).GetObject(1).ToText() }
 func (s SubMsg) SetName(v string)        { C.Struct(s).SetObject(1, s.Segment.NewText(v)) }
-func (s SubMsg) Params() Param_List      { return Param_List(C.Struct(s).GetObject(2)) }
-func (s SubMsg) SetParams(v Param_List)  { C.Struct(s).SetObject(2, C.Object(v)) }
+func (s SubMsg) Params() C.Object        { return C.Struct(s).GetObject(2) }
+func (s SubMsg) SetParams(v C.Object)    { C.Struct(s).SetObject(2, v) }
 
 // capn.JSON_enabled == false so we stub MarshallJSON().
 func (s SubMsg) MarshalJSON() (bs []byte, err error) { return }
@@ -573,8 +573,8 @@ func AutoNewMethodMsg(s *C.Segment) MethodMsg  { return MethodMsg(s.NewStructAR(
 func ReadRootMethodMsg(s *C.Segment) MethodMsg { return MethodMsg(s.Root(0).ToStruct()) }
 func (s MethodMsg) Method() string             { return C.Struct(s).GetObject(0).ToText() }
 func (s MethodMsg) SetMethod(v string)         { C.Struct(s).SetObject(0, s.Segment.NewText(v)) }
-func (s MethodMsg) Params() Param_List         { return Param_List(C.Struct(s).GetObject(1)) }
-func (s MethodMsg) SetParams(v Param_List)     { C.Struct(s).SetObject(1, C.Object(v)) }
+func (s MethodMsg) Params() C.Object           { return C.Struct(s).GetObject(1) }
+func (s MethodMsg) SetParams(v C.Object)       { C.Struct(s).SetObject(1, v) }
 func (s MethodMsg) Id() string                 { return C.Struct(s).GetObject(2).ToText() }
 func (s MethodMsg) SetId(v string)             { C.Struct(s).SetObject(2, s.Segment.NewText(v)) }
 func (s MethodMsg) RandomSeed() C.Object       { return C.Struct(s).GetObject(3) }
@@ -668,33 +668,6 @@ func (s UpdatedMsg_List) ToArray() []UpdatedMsg {
 	return a
 }
 func (s UpdatedMsg_List) Set(i int, item UpdatedMsg) { C.PointerList(s).Set(i, C.Object(item)) }
-
-type Param C.Struct
-
-func NewParam(s *C.Segment) Param      { return Param(s.NewStruct(0, 1)) }
-func NewRootParam(s *C.Segment) Param  { return Param(s.NewRootStruct(0, 1)) }
-func AutoNewParam(s *C.Segment) Param  { return Param(s.NewStructAR(0, 1)) }
-func ReadRootParam(s *C.Segment) Param { return Param(s.Root(0).ToStruct()) }
-func (s Param) Value() C.Object        { return C.Struct(s).GetObject(0) }
-func (s Param) SetValue(v C.Object)    { C.Struct(s).SetObject(0, v) }
-
-// capn.JSON_enabled == false so we stub MarshallJSON().
-func (s Param) MarshalJSON() (bs []byte, err error) { return }
-
-type Param_List C.PointerList
-
-func NewParamList(s *C.Segment, sz int) Param_List { return Param_List(s.NewCompositeList(0, 1, sz)) }
-func (s Param_List) Len() int                      { return C.PointerList(s).Len() }
-func (s Param_List) At(i int) Param                { return Param(C.PointerList(s).At(i).ToStruct()) }
-func (s Param_List) ToArray() []Param {
-	n := s.Len()
-	a := make([]Param, n)
-	for i := 0; i < n; i++ {
-		a[i] = s.At(i)
-	}
-	return a
-}
-func (s Param_List) Set(i int, item Param) { C.PointerList(s).Set(i, C.Object(item)) }
 
 type Error C.Struct
 

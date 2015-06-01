@@ -43,9 +43,9 @@ type session struct {
 
 type MethodContext interface {
 	Segment() (seg *capn.Segment)
-	Params() (params *Param_List)
+	Params() (params *capn.Object)
 	SendResult(obj *capn.Object) (err error)
-	SendError(obj *capn.Object) (err error)
+	SendError(obj *Error) (err error)
 	SendUpdated() (err error)
 }
 
@@ -55,7 +55,7 @@ type methodContext struct {
 	server  *server
 	session *session
 	segment *capn.Segment
-	params  *Param_List
+	params  *capn.Object
 }
 
 type MethodHandler func(ctx MethodContext)
@@ -254,7 +254,7 @@ func (c *methodContext) Segment() (segment *capn.Segment) {
 	return c.segment
 }
 
-func (c *methodContext) Params() (params *Param_List) {
+func (c *methodContext) Params() (params *capn.Object) {
 	return c.params
 }
 
@@ -266,9 +266,8 @@ func (c *methodContext) SendResult(res *capn.Object) (err error) {
 	return nil
 }
 
-func (c *methodContext) SendError(obj *capn.Object) (err error) {
-	methodError := NewError(c.segment)
-	c.result.SetError(methodError)
+func (c *methodContext) SendError(obj *Error) (err error) {
+	c.result.SetError(*obj)
 	c.session.outgoing <- c.message
 
 	// TODO: get and return error

@@ -29,7 +29,7 @@ var (
 
 type Client interface {
 	Connect(addr string) (err error)
-	Call(name string, params []interface{}) (res capn.Object, err error)
+	NewMethodCall(name string) (call MethodCall)
 }
 
 type client struct {
@@ -42,6 +42,19 @@ type client struct {
 	pingId     string
 	sessionId  string
 	latestPong time.Time
+}
+
+type MethodCall interface {
+	Segment() (seg *capn.Segment)
+	Call(params capn.Object) (res capn.Object, err error)
+}
+
+type methodCall struct {
+	id      string
+	name    string
+	client  *client
+	segment *capn.Segment
+	message *Message
 }
 
 func NewClient() (c Client) {
@@ -68,56 +81,6 @@ func (c *client) Connect(addr string) (err error) {
 	// TODO: timeout
 	err = <-c.connectCh
 	return err
-}
-
-// TODO: also implement an approach where the segment is created
-//       by the user for better performance
-func (c *client) Call(name string, params []interface{}) (res capn.Object, err error) {
-	seg := capn.NewBuffer(nil)
-	root := NewRootMessage(seg)
-	msg := NewMethodMsg(seg)
-	root.SetMethod(msg)
-	pms := NewParamList(seg, len(params))
-
-	// TODO: add cases for other types of params
-	for i, param := range params {
-		var v capn.Object
-
-		switch param.(type) {
-		case string:
-			v = seg.NewText(param.(string))
-		case []byte:
-			v = seg.NewData(param.([]byte))
-		}
-
-		p := NewParam(seg)
-		p.SetValue(v)
-		pms.Set(i, p)
-	}
-
-	// create a random it for the method call
-	id := uuid.NewV4().String()
-
-	msg.SetId(id)
-	msg.SetMethod(name)
-	msg.SetParams(pms)
-	ch := make(chan *ResultMsg)
-	c.calls[id] = ch
-
-	c.outgoing <- &root
-
-	// wait until we get a response
-	response := <-ch
-	delete(c.calls, id)
-
-	switch response.Which() {
-	case RESULTMSG_RESULT:
-		res = response.Result()
-	case RESULTMSG_ERROR:
-		err = response.Error()
-	}
-
-	return res, err
 }
 
 func (c *client) Close() (err error) {
@@ -270,4 +233,42 @@ func (c *client) handleResult(req *ResultMsg) {
 
 func (c *client) handleUpdated(req *UpdatedMsg) {
 	// TODO
+}
+
+func (c *client) NewMethodCall(name string) (call MethodCall) {
+	id := uuid.NewV4().String()
+	seg := capn.NewBuffer(nil)
+	root := NewRootMessage(seg)
+
+	return &methodCall{id, name, c, seg, &root}
+}
+
+func (m *methodCall) Segment() (seg *capn.Segment) {
+	return m.segment
+}
+
+func (m *methodCall) Call(params capn.Object) (res capn.Object, err error) {
+	root := m.message
+	msg := NewMethodMsg(m.segment)
+	msg.SetId(m.id)
+	msg.SetMethod(m.name)
+	msg.SetParams(params)
+	root.SetMethod(msg)
+
+	ch := make(chan *ResultMsg)
+	m.client.calls[m.id] = ch
+	m.client.outgoing <- root
+
+	// wait until we get a response
+	response := <-ch
+	delete(m.client.calls, m.id)
+
+	switch response.Which() {
+	case RESULTMSG_RESULT:
+		res = response.Result()
+	case RESULTMSG_ERROR:
+		err = response.Error()
+	}
+
+	return res, err
 }
