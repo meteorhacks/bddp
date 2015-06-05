@@ -42,6 +42,7 @@ type session struct {
 }
 
 type MethodContext interface {
+	Method() (name string)
 	Segment() (seg *capn.Segment)
 	Params() (params *capn.Object)
 	SendResult(obj *capn.Object) (err error)
@@ -50,6 +51,7 @@ type MethodContext interface {
 }
 
 type methodContext struct {
+	method  string
 	message *Message
 	result  *ResultMsg
 	server  *server
@@ -236,6 +238,7 @@ func (s *server) handleMethod(ses *session, req *MethodMsg) {
 
 	params := req.Params()
 	ctx := &methodContext{
+		method:  name,
 		message: &root,
 		result:  &msg,
 		server:  s,
@@ -245,6 +248,10 @@ func (s *server) handleMethod(ses *session, req *MethodMsg) {
 	}
 
 	handler(ctx)
+}
+
+func (c *methodContext) Method() (name string) {
+	return c.method
 }
 
 func (c *methodContext) Segment() (segment *capn.Segment) {
