@@ -41,25 +41,6 @@ type session struct {
 	latestPing time.Time
 }
 
-type MethodContext interface {
-	Method() (name string)
-	Segment() (seg *capn.Segment)
-	Params() (params *capn.Object)
-	SendResult(obj *capn.Object) (err error)
-	SendError(obj *Error) (err error)
-	SendUpdated() (err error)
-}
-
-type methodContext struct {
-	method  string
-	message *Message
-	result  *ResultMsg
-	server  *server
-	session *session
-	segment *capn.Segment
-	params  *capn.Object
-}
-
 type MethodHandler func(ctx MethodContext)
 
 func NewServer() (s Server) {
@@ -113,12 +94,6 @@ func (s *server) Close() (err error) {
 	return nil
 }
 
-func (s *server) closeSession(ses *session) (err error) {
-	ses.closed = true
-	err = ses.conn.Close()
-	return err
-}
-
 func (s *server) sendMessages(ses *session) {
 	for {
 		root, open := <-ses.outgoing
@@ -158,10 +133,10 @@ func (s *server) recvMessages(ses *session) {
 		switch msgType {
 		case MESSAGE_PING:
 			req := root.Ping()
-			s.handlePing(ses, &req)
+			go s.handlePing(ses, &req)
 		case MESSAGE_METHOD:
 			req := root.Method()
-			s.handleMethod(ses, &req)
+			go s.handleMethod(ses, &req)
 		default:
 			log.Println(ErrInvalidMsgType, msgType)
 		}
@@ -176,7 +151,7 @@ func (s *server) handleConn(ses *session) {
 
 		seg, err := capn.ReadFromStream(ses.conn, nil)
 		if err == io.EOF {
-			s.closeSession(ses)
+			ses.closed = true
 			break
 		} else if err != nil {
 			log.Println(err)
@@ -248,43 +223,4 @@ func (s *server) handleMethod(ses *session, req *MethodMsg) {
 	}
 
 	handler(ctx)
-}
-
-func (c *methodContext) Method() (name string) {
-	return c.method
-}
-
-func (c *methodContext) Segment() (segment *capn.Segment) {
-	return c.segment
-}
-
-func (c *methodContext) Params() (params *capn.Object) {
-	return c.params
-}
-
-func (c *methodContext) SendResult(res *capn.Object) (err error) {
-	c.result.SetResult(*res)
-	c.session.outgoing <- c.message
-
-	// TODO: get and return error
-	return nil
-}
-
-func (c *methodContext) SendError(obj *Error) (err error) {
-	c.result.SetError(*obj)
-	c.session.outgoing <- c.message
-
-	// TODO: get and return error
-	return nil
-}
-
-func (c *methodContext) SendUpdated() (err error) {
-	seg := capn.NewBuffer(nil)
-	root := NewRootMessage(seg)
-	msg := NewUpdatedMsg(seg)
-	root.SetUpdated(msg)
-	c.session.outgoing <- &root
-
-	// TODO: get and return error
-	return nil
 }
