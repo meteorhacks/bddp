@@ -125,14 +125,14 @@ func (s *session) handleConnect(msg *bddp.Message) {
 	seg := capn.NewBuffer(nil)
 	root := bddp.NewRootMessage(seg)
 
-	if req.Version() == ServerVersion {
+	if req.Version() == Version {
 		res := bddp.NewConnectedMsg(seg)
 		s.id = uuid.NewV4().String()
 		res.SetSession(s.id)
 		root.SetConnected(res)
 	} else {
 		res := bddp.NewFailedMsg(seg)
-		res.SetVersion(ServerVersion)
+		res.SetVersion(Version)
 		root.SetFailed(res)
 	}
 

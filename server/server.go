@@ -10,7 +10,7 @@ const (
 	// BDDP protocol version used by the server.
 	// Until the server supports multiple versions,
 	// client version should match server version.
-	ServerVersion = "1"
+	Version = "1"
 
 	// Error logger params
 	LogPrefix = "bddp: "
