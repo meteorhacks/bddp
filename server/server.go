@@ -77,12 +77,13 @@ func (s *server) Close() (err error) {
 		return nil
 	}
 
+	s.closed = true
+
 	err = s.listener.Close()
 	if err != nil {
 		return err
 	}
 
-	s.closed = true
 	return nil
 }
 
