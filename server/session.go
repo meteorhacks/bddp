@@ -13,8 +13,6 @@ import (
 
 var (
 	ErrSessionClosed  = errors.New("client's session is closed")
-	ErrConnected      = errors.New("client is already connected")
-	ErrNotConnected   = errors.New("client is not connected")
 	ErrInvalidMessage = errors.New("invalid message type")
 	ErrMethodNotFound = errors.New("method not found")
 )
