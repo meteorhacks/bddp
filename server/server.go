@@ -13,8 +13,8 @@ const (
 	Version = "1"
 
 	// Error logger params
-	LogPrefix = "bddp: "
-	LogFlags  = log.LstdFlags
+	LogPrefix = "BDDP: "
+	LogFlags  = 0
 )
 
 // Method handler type
