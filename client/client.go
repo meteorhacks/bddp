@@ -2,7 +2,6 @@ package client
 
 import (
 	"errors"
-	"io"
 	"log"
 	"net"
 	"os"
@@ -22,18 +21,20 @@ const (
 	Version = "1"
 
 	// Reconnection params
-	ReconnInterval = time.Second * 5
+	ReconnInterval = time.Second * 10
+	ReconnAttempts = 10
 
 	// Ping message interval
 	PingInterval = 10
 
 	// Error logger params
-	LogPrefix = "bddp: "
-	LogFlags  = log.LstdFlags
+	LogPrefix = "BDDP: "
+	LogFlags  = 0
 )
 
 var (
 	ErrClientClosed   = errors.New("client is closed")
+	ErrReconnectError = errors.New("failed to reconnect to server")
 	ErrInvalidMessage = errors.New("invalid message type")
 	ErrSessionFailed  = errors.New("failed to start session")
 	ErrInvalidPongID  = errors.New("pong id doesn't match")
@@ -93,18 +94,36 @@ func (c *client) Errors() (errCh chan error) {
 }
 
 func (c *client) Connect() (err error) {
-	c.conn, err = net.Dial("tcp", c.address)
+	c.closed = true
+
+	c.logger.Println("connecting...")
+
+	for i := 0; i < ReconnAttempts; i++ {
+		c.conn, err = net.Dial("tcp", c.address)
+		if err == nil {
+			c.logger.Println("connection established")
+			break
+		}
+
+		// wait some time before reconnect
+		c.handleErr(err)
+		time.Sleep(ReconnInterval)
+		c.logger.Println("re-connecting...")
+	}
+
 	if err != nil {
 		return err
 	}
 
+	c.closed = false
+
 	// automatically reconnect when
 	// connection to server drops
-	go c.reconnect()
+	go c.start()
 
 	err = c.startSession()
 	if err != nil {
-		return err
+		c.handleErr(err)
 	}
 
 	return nil
@@ -116,17 +135,16 @@ func (c *client) Close() (err error) {
 	}
 
 	c.closed = true
-
-	// end all in-flight method calls when closing client
-	// otherwise it might leave some goroutines hanging
-	for _, ch := range c.calls {
-		ch <- nil
-	}
+	c.endMethodCalls()
 
 	return nil
 }
 
 func (c *client) Method(name string) (call MCall, err error) {
+	if c.closed {
+		return nil, ErrClientClosed
+	}
+
 	seg := capn.NewBuffer(nil)
 	root := bddp.NewRootMessage(seg)
 
@@ -141,32 +159,53 @@ func (c *client) Method(name string) (call MCall, err error) {
 	return call, nil
 }
 
-func (c *client) reconnect() {
+func (c *client) start() {
 	var err error
 
-	err = c.process()
-	if err != nil {
-		c.handleErr(err)
+	for !c.closed {
+		var msg *bddp.Message
+
+		// stop the session if we get
+		// any connection related errors
+		if msg, err = c.read(); err != nil {
+			break
+		}
+
+		c.processMsg(msg)
 	}
 
-	err = c.Close()
-	if err != nil {
-		c.handleErr(err)
+	// `err == nil` only if closed by user.
+	// do not reconnect when closed by user.
+	if err == nil && c.closed {
+		err = c.conn.Close()
+		if err != nil {
+			c.handleErr(err)
+		}
+
+		return
 	}
 
-	// wait some time before reconnect
-	time.Sleep(ReconnInterval)
+	c.handleErr(err)
 
-	// TODO: for better memory performance, recover client
-	// struct instead of replacing it with a new one
-	newc := New(c.address).(*client)
+	c.closed = true
+	// end method calls made during reconnect
+	// TODO: try to recover these instead
+	c.endMethodCalls()
 
-	err = newc.Connect()
+	err = c.Connect()
 	if err != nil {
-		newc.handleErr(err)
+		c.handleErr(ErrReconnectError)
 	}
+}
 
-	*c = *newc
+// end all in-flight method calls when closing client
+// otherwise it might leave some goroutines hanging
+// TODO: try to recover and retry instead of dropping
+func (c *client) endMethodCalls() {
+	c.logger.Printf("dropping %d method calls\n", len(c.calls))
+	for _, ch := range c.calls {
+		ch <- nil
+	}
 }
 
 func (c *client) startSession() (err error) {
@@ -188,6 +227,7 @@ func (c *client) startSession() (err error) {
 	return err
 }
 
+// TODO: use ping to check connection health
 func (c *client) startPing() {
 	counter := 0
 
@@ -244,27 +284,6 @@ func (c *client) write(msg *bddp.Message) (err error) {
 	return err
 }
 
-func (c *client) process() (err error) {
-	for !c.closed {
-		var msg *bddp.Message
-
-		// stop the session if we get
-		// any connection related errors
-		if msg, err = c.read(); err != nil {
-			break
-		}
-
-		c.processMsg(msg)
-	}
-
-	// EOF usually means a disconnect
-	if err != io.EOF {
-		return err
-	}
-
-	return nil
-}
-
 // If the session id is an empty string (no session ID)
 // only accept MESSAGE_CONNECT messages. After it's set
 // accept other supported message types.
@@ -273,15 +292,15 @@ func (c *client) processMsg(msg *bddp.Message) (err error) {
 
 	switch mtype {
 	case bddp.MESSAGE_CONNECTED:
-		c.handleConnected(msg)
+		go c.handleConnected(msg)
 	case bddp.MESSAGE_FAILED:
-		c.handleFailed(msg)
+		go c.handleFailed(msg)
 	case bddp.MESSAGE_PONG:
-		c.handlePong(msg)
+		go c.handlePong(msg)
 	case bddp.MESSAGE_RESULT:
-		c.handleResult(msg)
+		go c.handleResult(msg)
 	case bddp.MESSAGE_UPDATED:
-		c.handleUpdated(msg)
+		go c.handleUpdated(msg)
 	default:
 		// unknown type or corrupt msg
 		c.handleErr(ErrInvalidMessage)
