@@ -102,7 +102,7 @@ func (s *session) processMsg(msg *bddp.Message) (err error) {
 
 	switch mtype {
 	case bddp.MESSAGE_CONNECT:
-		s.handleConnect(msg)
+		go s.handleConnect(msg)
 	case bddp.MESSAGE_PING:
 		go s.handlePing(msg)
 	case bddp.MESSAGE_METHOD:
