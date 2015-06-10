@@ -1,4 +1,4 @@
-package server
+package bddp
 
 import (
 	"errors"
@@ -7,13 +7,11 @@ import (
 	"sync"
 
 	"github.com/glycerine/go-capnproto"
-	"github.com/meteorhacks/bddp"
 	"github.com/satori/go.uuid"
 )
 
 var (
 	ErrSessionClosed  = errors.New("client's session is closed")
-	ErrInvalidMessage = errors.New("invalid message type")
 	ErrMethodNotFound = errors.New("method not found")
 )
 
@@ -43,7 +41,7 @@ func (s *session) close() (err error) {
 }
 
 // Read a bddp message from the tcp connection
-func (s *session) read() (msg *bddp.Message, err error) {
+func (s *session) read() (msg *Message, err error) {
 	if s.closed {
 		return nil, ErrSessionClosed
 	}
@@ -53,13 +51,13 @@ func (s *session) read() (msg *bddp.Message, err error) {
 		return nil, err
 	}
 
-	root := bddp.ReadRootMessage(seg)
+	root := ReadRootMessage(seg)
 	return &root, nil
 }
 
 // Just write message data (cap'n proto) to the connection.
 // Use a mutex to make sure messages are written one by one.
-func (s *session) write(msg *bddp.Message) (err error) {
+func (s *session) write(msg *Message) (err error) {
 	if s.closed {
 		return ErrSessionClosed
 	}
@@ -75,7 +73,7 @@ func (s *session) write(msg *bddp.Message) (err error) {
 
 func (s *session) process() (err error) {
 	for !s.closed {
-		var msg *bddp.Message
+		var msg *Message
 
 		// stop the session if we get
 		// any connection related errors
@@ -97,15 +95,15 @@ func (s *session) process() (err error) {
 // If the session id is an empty string (no session ID)
 // only accept MESSAGE_CONNECT messages. After it's set
 // accept other supported message types.
-func (s *session) processMsg(msg *bddp.Message) (err error) {
+func (s *session) processMsg(msg *Message) (err error) {
 	mtype := msg.Which()
 
 	switch mtype {
-	case bddp.MESSAGE_CONNECT:
+	case MESSAGE_CONNECT:
 		go s.handleConnect(msg)
-	case bddp.MESSAGE_PING:
+	case MESSAGE_PING:
 		go s.handlePing(msg)
-	case bddp.MESSAGE_METHOD:
+	case MESSAGE_METHOD:
 		go s.handleMethod(msg)
 	default:
 		// unknown type or corrupt msg
@@ -117,19 +115,19 @@ func (s *session) processMsg(msg *bddp.Message) (err error) {
 
 // TODO: implement resuming existing session
 // TODO: implement support for multiple versions
-func (s *session) handleConnect(msg *bddp.Message) {
+func (s *session) handleConnect(msg *Message) {
 	req := msg.Connect()
 
 	seg := capn.NewBuffer(nil)
-	root := bddp.NewRootMessage(seg)
+	root := NewRootMessage(seg)
 
 	if req.Version() == Version {
-		res := bddp.NewConnectedMsg(seg)
+		res := NewConnectedMsg(seg)
 		s.id = uuid.NewV4().String()
 		res.SetSession(s.id)
 		root.SetConnected(res)
 	} else {
-		res := bddp.NewFailedMsg(seg)
+		res := NewFailedMsg(seg)
 		res.SetVersion(Version)
 		root.SetFailed(res)
 	}
@@ -137,7 +135,7 @@ func (s *session) handleConnect(msg *bddp.Message) {
 	s.write(&root)
 }
 
-func (s *session) handlePing(msg *bddp.Message) {
+func (s *session) handlePing(msg *Message) {
 	if s.closed {
 		return
 	}
@@ -145,15 +143,15 @@ func (s *session) handlePing(msg *bddp.Message) {
 	req := msg.Ping()
 
 	seg := capn.NewBuffer(nil)
-	root := bddp.NewRootMessage(seg)
-	res := bddp.NewPongMsg(seg)
+	root := NewRootMessage(seg)
+	res := NewPongMsg(seg)
 	res.SetId(req.Id())
 	root.SetPong(res)
 
 	s.write(&root)
 }
 
-func (s *session) handleMethod(msg *bddp.Message) {
+func (s *session) handleMethod(msg *Message) {
 	if s.closed {
 		return
 	}
@@ -161,8 +159,8 @@ func (s *session) handleMethod(msg *bddp.Message) {
 	req := msg.Method()
 
 	seg := capn.NewBuffer(nil)
-	root := bddp.NewRootMessage(seg)
-	res := bddp.NewResultMsg(seg)
+	root := NewRootMessage(seg)
+	res := NewResultMsg(seg)
 	root.SetResult(res)
 	res.SetId(req.Id())
 
@@ -173,7 +171,7 @@ func (s *session) handleMethod(msg *bddp.Message) {
 	// handler does not exist
 	if !ok {
 		s.handleErr(ErrMethodNotFound)
-		err := bddp.NewError(seg)
+		err := NewError(seg)
 		res.SetError(err)
 		s.write(&root)
 		return

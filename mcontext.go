@@ -1,23 +1,20 @@
-package server
+package bddp
 
-import (
-	"github.com/glycerine/go-capnproto"
-	"github.com/meteorhacks/bddp"
-)
+import "github.com/glycerine/go-capnproto"
 
 type MContext interface {
 	Method() (name string)
 	Segment() (seg *capn.Segment)
 	Params() (params *capn.Object)
 	SendResult(obj *capn.Object) (err error)
-	SendError(obj *bddp.Error) (err error)
+	SendError(obj *Error) (err error)
 	SendUpdated() (err error)
 }
 
 type mcontext struct {
 	method  string
-	message *bddp.Message
-	result  *bddp.ResultMsg
+	message *Message
+	result  *ResultMsg
 	session *session
 	segment *capn.Segment
 	params  *capn.Object
@@ -41,7 +38,7 @@ func (c *mcontext) SendResult(res *capn.Object) (err error) {
 	return err
 }
 
-func (c *mcontext) SendError(obj *bddp.Error) (err error) {
+func (c *mcontext) SendError(obj *Error) (err error) {
 	c.result.SetError(*obj)
 	err = c.session.write(c.message)
 	return err
@@ -49,8 +46,8 @@ func (c *mcontext) SendError(obj *bddp.Error) (err error) {
 
 func (c *mcontext) SendUpdated() (err error) {
 	seg := capn.NewBuffer(nil)
-	root := bddp.NewRootMessage(seg)
-	msg := bddp.NewUpdatedMsg(seg)
+	root := NewRootMessage(seg)
+	msg := NewUpdatedMsg(seg)
 	root.SetUpdated(msg)
 	err = c.session.write(&root)
 	return err

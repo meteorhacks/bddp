@@ -1,4 +1,4 @@
-package client
+package bddp
 
 import (
 	"errors"
@@ -10,32 +10,21 @@ import (
 	"time"
 
 	"github.com/glycerine/go-capnproto"
-	"github.com/meteorhacks/bddp"
 	"github.com/satori/go.uuid"
 )
 
 const (
-	// BDDP protocol version used by the client.
-	// Until the client supports multiple versions,
-	// client version should match server version.
-	Version = "1"
-
 	// Reconnection params
 	ReconnInterval = time.Second * 10
 	ReconnAttempts = 10
 
 	// Ping message interval
 	PingInterval = 10
-
-	// Error logger params
-	LogPrefix = "BDDP: "
-	LogFlags  = 0
 )
 
 var (
 	ErrClientClosed   = errors.New("client is closed")
 	ErrReconnectError = errors.New("failed to reconnect to server")
-	ErrInvalidMessage = errors.New("invalid message type")
 	ErrSessionFailed  = errors.New("failed to start session")
 	ErrInvalidPongID  = errors.New("pong id doesn't match")
 )
@@ -70,7 +59,7 @@ type client struct {
 	connCh chan error
 
 	mutex  sync.Mutex
-	calls  map[string]chan *bddp.ResultMsg
+	calls  map[string]chan *ResultMsg
 	closed bool
 
 	pingID string
@@ -78,12 +67,12 @@ type client struct {
 	logger *log.Logger
 }
 
-func New(address string) (c Client) {
+func NewClient(address string) (c Client) {
 	return &client{
 		address: address,
 		errChan: make(chan error),
 		connCh:  make(chan error),
-		calls:   make(map[string]chan *bddp.ResultMsg),
+		calls:   make(map[string]chan *ResultMsg),
 		logger:  log.New(os.Stderr, LogPrefix, LogFlags),
 	}
 }
@@ -146,7 +135,7 @@ func (c *client) Method(name string) (call MCall, err error) {
 	}
 
 	seg := capn.NewBuffer(nil)
-	root := bddp.NewRootMessage(seg)
+	root := NewRootMessage(seg)
 
 	call = &mcall{
 		id:      uuid.NewV4().String(),
@@ -163,7 +152,7 @@ func (c *client) start() {
 	var err error
 
 	for !c.closed {
-		var msg *bddp.Message
+		var msg *Message
 
 		// stop the session if we get
 		// any connection related errors
@@ -210,8 +199,8 @@ func (c *client) endMethodCalls() {
 
 func (c *client) startSession() (err error) {
 	seg := capn.NewBuffer(nil)
-	root := bddp.NewRootMessage(seg)
-	msg := bddp.NewConnectMsg(seg)
+	root := NewRootMessage(seg)
+	msg := NewConnectMsg(seg)
 	msg.SetVersion(Version)
 	support := seg.NewTextList(1)
 	support.Set(0, Version)
@@ -232,8 +221,8 @@ func (c *client) startPing() {
 	counter := 0
 
 	seg := capn.NewBuffer(nil)
-	root := bddp.NewRootMessage(seg)
-	msg := bddp.NewPingMsg(seg)
+	root := NewRootMessage(seg)
+	msg := NewPingMsg(seg)
 	root.SetPing(msg)
 
 	for _ = range time.Tick(time.Second * PingInterval) {
@@ -254,7 +243,7 @@ func (c *client) startPing() {
 	}
 }
 
-func (c *client) read() (msg *bddp.Message, err error) {
+func (c *client) read() (msg *Message, err error) {
 	if c.closed {
 		return nil, ErrClientClosed
 	}
@@ -264,13 +253,13 @@ func (c *client) read() (msg *bddp.Message, err error) {
 		return nil, err
 	}
 
-	root := bddp.ReadRootMessage(seg)
+	root := ReadRootMessage(seg)
 	return &root, nil
 }
 
 // Just write message data (cap'n proto) to the connection.
 // Use a mutex to make sure messages are written one by one.
-func (c *client) write(msg *bddp.Message) (err error) {
+func (c *client) write(msg *Message) (err error) {
 	if c.closed {
 		return ErrClientClosed
 	}
@@ -287,19 +276,19 @@ func (c *client) write(msg *bddp.Message) (err error) {
 // If the session id is an empty string (no session ID)
 // only accept MESSAGE_CONNECT messages. After it's set
 // accept other supported message types.
-func (c *client) processMsg(msg *bddp.Message) (err error) {
+func (c *client) processMsg(msg *Message) (err error) {
 	mtype := msg.Which()
 
 	switch mtype {
-	case bddp.MESSAGE_CONNECTED:
+	case MESSAGE_CONNECTED:
 		go c.handleConnected(msg)
-	case bddp.MESSAGE_FAILED:
+	case MESSAGE_FAILED:
 		go c.handleFailed(msg)
-	case bddp.MESSAGE_PONG:
+	case MESSAGE_PONG:
 		go c.handlePong(msg)
-	case bddp.MESSAGE_RESULT:
+	case MESSAGE_RESULT:
 		go c.handleResult(msg)
-	case bddp.MESSAGE_UPDATED:
+	case MESSAGE_UPDATED:
 		go c.handleUpdated(msg)
 	default:
 		// unknown type or corrupt msg
@@ -309,7 +298,7 @@ func (c *client) processMsg(msg *bddp.Message) (err error) {
 	return nil
 }
 
-func (c *client) handleConnected(msg *bddp.Message) {
+func (c *client) handleConnected(msg *Message) {
 	if c.closed {
 		return
 	}
@@ -319,7 +308,7 @@ func (c *client) handleConnected(msg *bddp.Message) {
 	c.connCh <- nil
 }
 
-func (c *client) handleFailed(msg *bddp.Message) {
+func (c *client) handleFailed(msg *Message) {
 	if c.closed {
 		return
 	}
@@ -331,7 +320,7 @@ func (c *client) handleFailed(msg *bddp.Message) {
 	c.connCh <- ErrSessionFailed
 }
 
-func (c *client) handlePong(msg *bddp.Message) {
+func (c *client) handlePong(msg *Message) {
 	if c.closed {
 		return
 	}
@@ -342,7 +331,7 @@ func (c *client) handlePong(msg *bddp.Message) {
 	}
 }
 
-func (c *client) handleResult(msg *bddp.Message) {
+func (c *client) handleResult(msg *Message) {
 	if c.closed {
 		return
 	}
@@ -359,7 +348,7 @@ func (c *client) handleResult(msg *bddp.Message) {
 	ch <- &req
 }
 
-func (c *client) handleUpdated(msg *bddp.Message) {
+func (c *client) handleUpdated(msg *Message) {
 	if c.closed {
 		return
 	}

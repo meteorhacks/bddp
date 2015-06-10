@@ -1,20 +1,9 @@
-package server
+package bddp
 
 import (
 	"log"
 	"net"
 	"os"
-)
-
-const (
-	// BDDP protocol version used by the server.
-	// Until the server supports multiple versions,
-	// client version should match server version.
-	Version = "1"
-
-	// Error logger params
-	LogPrefix = "BDDP: "
-	LogFlags  = 0
 )
 
 // Method handler type
@@ -54,7 +43,7 @@ type server struct {
 
 // Create a new Server which will connect to provided
 // address. example: `server.New(":3000")`
-func New(address string) (s Server) {
+func NewServer(address string) (s Server) {
 	return &server{
 		address: address,
 		errChan: make(chan error),
@@ -92,6 +81,8 @@ func (s *server) Listen() (err error) {
 	if err != nil {
 		return err
 	}
+
+	s.logger.Println("listening on", s.address)
 
 	for !s.closed {
 		conn, err := s.listener.Accept()

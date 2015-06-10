@@ -1,10 +1,9 @@
-package client
+package bddp
 
 import (
 	"errors"
 
 	"github.com/glycerine/go-capnproto"
-	"github.com/meteorhacks/bddp"
 )
 
 var (
@@ -21,7 +20,7 @@ type mcall struct {
 	name    string
 	client  *client
 	segment *capn.Segment
-	message *bddp.Message
+	message *Message
 }
 
 func (m *mcall) Segment() (seg *capn.Segment) {
@@ -31,13 +30,13 @@ func (m *mcall) Segment() (seg *capn.Segment) {
 // Response will be nil if the method call fails inflight
 func (m *mcall) Call(params capn.Object) (res capn.Object, err error) {
 	root := m.message
-	msg := bddp.NewMethodMsg(m.segment)
+	msg := NewMethodMsg(m.segment)
 	msg.SetId(m.id)
 	msg.SetMethod(m.name)
 	msg.SetParams(params)
 	root.SetMethod(msg)
 
-	ch := make(chan *bddp.ResultMsg)
+	ch := make(chan *ResultMsg)
 	m.client.calls[m.id] = ch
 	m.client.write(root)
 
@@ -51,9 +50,9 @@ func (m *mcall) Call(params capn.Object) (res capn.Object, err error) {
 	}
 
 	switch response.Which() {
-	case bddp.RESULTMSG_RESULT:
+	case RESULTMSG_RESULT:
 		res = response.Result()
-	case bddp.RESULTMSG_ERROR:
+	case RESULTMSG_ERROR:
 		err = response.Error()
 	}
 
