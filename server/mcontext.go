@@ -52,6 +52,6 @@ func (c *mcontext) SendUpdated() (err error) {
 	root := bddp.NewRootMessage(seg)
 	msg := bddp.NewUpdatedMsg(seg)
 	root.SetUpdated(msg)
-	err = c.session.write(c.message)
+	err = c.session.write(&root)
 	return err
 }
